@@ -1,2 +1,2 @@
-# widgetscript
-Python library for widget creation in Jupyter notebooks with seamless communication between Python and JavaScript
+# widget-script
+Python library for widget development in Jupyter notebooks with seamless communication between Python and JavaScript
