@@ -10,11 +10,11 @@ from textwrap import dedent
 from functools import lru_cache
 
 from .js_builtins import JS_BUILTINS, \
-    __callback_adapter__, __convert_py_argument__, __convert_exports__, \
+    __callback_adapter__, __convert_py_argument__, \
     __convert_py_starred_argument__, \
     __convert_py_keyword_argument__, __convert_py_starred_keyword_argument__, \
     __common_init__
-from .shared import __unique_py_function_name__, __unique_context_variable_name__
+from .shared import __unique_py_function_name__
 
 
 def relative_path(path):
@@ -24,7 +24,8 @@ def relative_path(path):
 def pycall(f, callback=None, error_callback=None):
     """
     Function that should be called inside js function to call python function
-    Example: pycall(foo(x, y), js_callback, js_error_callback)
+    Example: pycall(foo(x, y, z=5), js_callback, js_error_callback)
+    Supports all types of arguments (positional, keywords, starred positional, starred keywords)
     :param f: function to call with its arguments. Write f as if you were calling it
     :param callback: js callback, that would be invoked with py function call results
     :param error_callback: js callback, that would be invoked if py function fails
@@ -160,7 +161,7 @@ def _compile_context_generator(js_functions, js_inits, minify):
                             "let __exports = exports;",
                             "exports = undefined;",
                             inits_calls,
-                            "return " + __convert_exports__.__name__ + "(__exports);",
+                            "return __exports;",
                             "}"])
 
         return script

@@ -14,15 +14,7 @@ def _decode_param(param):
     return json.loads(base64.b64decode(param).decode())
 
 
-def _encode_param(param):
-    return base64.b64encode(json.dumps(param).encode()).decode()
-
-
-def _encode_result(result):
-    return json.dumps(result)
-
-
-def random_id():
+def _random_id():
     return str(uuid.uuid4()).replace("-", "_")
 
 
@@ -30,7 +22,7 @@ class PrecompiledWidgetContext:
 
     def __init__(self, context_generator_script):
         self.context_generator_script = context_generator_script
-        self.precompiled_context_id = random_id()
+        self.precompiled_context_id = _random_id()
         self.context_generator_var_name = "__js_precompiled_context_generator_{}".format(self.precompiled_context_id)
         self.injected = False
 
@@ -76,7 +68,7 @@ class WidgetContext:
         self._js_functions = []
         self._py_functions = []
         self._js_inits = []
-        self.context_id = random_id()
+        self.context_id = _random_id()
         self.data = data
         self.precompiled_context = precompiled_context
 
@@ -102,7 +94,7 @@ class WidgetContext:
         def wrapper(*args, **kwargs):
             args = map(_decode_param, args)
             kwargs = {key: _decode_param(value) for key, value in kwargs.items()}
-            return _encode_result(f(*args, **kwargs))
+            return json.dumps(f(*args, **kwargs))
 
         unique_f_name = __unique_py_function_name__(f.__name__, self.context_id)
         self._main_frame.f_globals[unique_f_name] = wrapper
@@ -118,11 +110,8 @@ class WidgetContext:
         Doesn't return JavaScript function result back to Python (you can implement it yourself using `pycall`)
         """
         def wrapper(*args):
-            args = list(map(_encode_param, args))
-            if len(args) > 0:
-                args = "'" + "' , '".join(args) + "'"
-            else:
-                args = ""
+            args = map(json.dumps, args)
+            args = ",".join(args)
 
             script = __unique_context_variable_name__(self.context_id) + "." + f.__name__ + "({})".format(args) + ";"
             self._execute_js(script)
