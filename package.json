@@ -1,0 +1,8 @@
+{
+  "name": "widgetscript",
+  "version": "1.0.0",
+  "dependencies": {
+    "rollup": "1.15.1",
+    "uglify-es": "3.3.9"
+  }
+}
