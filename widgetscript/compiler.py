@@ -22,6 +22,13 @@ def relative_path(path):
 
 
 def pycall(f, callback=None, error_callback=None):
+    """
+    Function that should be called inside js function to call python function
+    Example: pycall(foo(x, y), js_callback, js_error_callback)
+    :param f: function to call with its arguments. Write f as if you were calling it
+    :param callback: js callback, that would be invoked with py function call results
+    :param error_callback: js callback, that would be invoked if py function fails
+    """
     if callback is not None:
         callback(f)
 

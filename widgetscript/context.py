@@ -35,6 +35,10 @@ class PrecompiledWidgetContext:
         self.injected = False
 
     def save(self, path):
+        """
+        Saves precompiled context to file
+        :param path: path to file
+        """
         with open(path, "w") as f:
             f.write(self.context_generator_script)
 
@@ -46,6 +50,10 @@ class PrecompiledWidgetContext:
 
     @classmethod
     def load(cls, path):
+        """
+        Loads precompiled context from file
+        :param path: path to saved context
+        """
         with open(path, "r") as f:
             context_generator_script = f.read()
 
@@ -59,6 +67,12 @@ class PrecompiledWidgetContext:
 class WidgetContext:
 
     def __init__(self, data=None, precompiled_context=None):
+        """
+        Creates `WidgetContext`
+        :param data: data to pass to context in JavaScript. Would be available as __data variable.
+         By default it would be null
+        :param precompiled_context: precompiled context obtained from same widget context
+        """
         self._js_functions = []
         self._py_functions = []
         self._js_inits = []
@@ -80,6 +94,11 @@ class WidgetContext:
             raise ValueError("Can't find __main__ frame in stack")
 
     def py(self, f):
+        """
+        Decorator for python functions invokable from js functions
+        Returns its argument without modifications
+        """
+
         def wrapper(*args, **kwargs):
             args = map(_decode_param, args)
             kwargs = {key: _decode_param(value) for key, value in kwargs.items()}
@@ -91,13 +110,13 @@ class WidgetContext:
 
         return f
 
-    def js_init(self, f):
-        if len(inspect.signature(f).parameters) > 0:
-            raise ValueError("js_init function shouldn't have arguments")
-        self._js_inits.append(f)
-        return self.js(f)
-
     def js(self, f):
+        """
+        Decorator for js functions.
+        All js functions will be translated to JavaScript, and are accessible for each other inside one context
+        Calling resulting function in python will execute correspondent function in JavaScript
+        Doesn't return JavaScript function result back to Python (you can implement it yourself using `pycall`)
+        """
         def wrapper(*args):
             args = list(map(_encode_param, args))
             if len(args) > 0:
@@ -111,13 +130,32 @@ class WidgetContext:
         self._js_functions.append(f)
         return wrapper
 
+    def js_init(self, f):
+        """
+        Decorator, same as `js` decorator, but also make function invoke after creation of context
+        """
+        if len(inspect.signature(f).parameters) > 0:
+            raise ValueError("js_init function shouldn't have arguments")
+        self._js_inits.append(f)
+        return self.js(f)
+
     def _get_context_generator_script(self, minify):
         return compile_context_generator(self._js_functions, self._js_inits, minify)
 
     def compile(self, minify=True):
+        """
+        Creates precompiled context from current one
+        :param minify: if to minify code (for debug purposes)
+        :return: precompiled context
+        """
         return PrecompiledWidgetContext(self._get_context_generator_script(minify=minify))
 
     def html(self):
+        """
+        Returns HTML code that should be inserted in order to activate context
+        No guarantees are given about case when same HTML code executed twice or more times
+        :return: HTML code
+        """
         if self.precompiled_context is None:
             injector = AnonymousJsContextInjector(self._get_context_generator_script(minify=True))
         else:
