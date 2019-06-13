@@ -1,24 +1,16 @@
-import inspect
 import subprocess
 import ast
 import astor
 import tempfile
 import shutil
 import os
-import json
-from textwrap import dedent
 from functools import lru_cache
 
 from .js_builtins import JS_BUILTINS, \
     __callback_adapter__, __convert_py_argument__, \
     __convert_py_starred_argument__, \
-    __convert_py_keyword_argument__, __convert_py_starred_keyword_argument__, \
-    __common_init__
+    __convert_py_keyword_argument__, __convert_py_starred_keyword_argument__
 from .shared import __unique_py_function_name__
-
-
-def relative_path(path):
-    return os.path.join(os.path.dirname(__file__), path)
 
 
 def pycall(f, callback=None, error_callback=None):
@@ -34,11 +26,15 @@ def pycall(f, callback=None, error_callback=None):
         callback(f)
 
 
-def node_source(node):
+def _relative_path(path):
+    return os.path.join(os.path.dirname(__file__), path)
+
+
+def _node_source(node):
     return astor.to_source(node).strip()
 
 
-class PycallToIPythonKernelTransformer(ast.NodeTransformer):
+class _PycallToIPythonKernelTransformer(ast.NodeTransformer):
 
     def __init__(self):
         super().__init__()
@@ -46,18 +42,19 @@ class PycallToIPythonKernelTransformer(ast.NodeTransformer):
     def _pycall_arg_to_str(self, call_node):
 
         def convert_arg_value(arg):
-            return __convert_py_argument__.__name__ + "({})".format(node_source(arg))
+            return __convert_py_argument__.__name__ + "({})".format(_node_source(arg))
 
         def convert_starred_arg_value(arg):
-            return __convert_py_starred_argument__.__name__ + "({})".format(node_source(arg.value))
+            return __convert_py_starred_argument__.__name__ + "({})".format(_node_source(arg.value))
 
         def convert_keyword_value(keyword):
-            return __convert_py_keyword_argument__.__name__ + "({}, {})".format(keyword.arg, node_source(keyword.value))
+            return __convert_py_keyword_argument__.__name__ + "({}, {})".format(keyword.arg,
+                                                                                _node_source(keyword.value))
 
         def convert_starred_keyword_value(keyword):
-            return __convert_py_starred_keyword_argument__.__name__ + "({})".format(node_source(keyword.value))
+            return __convert_py_starred_keyword_argument__.__name__ + "({})".format(_node_source(keyword.value))
 
-        orig_func_name = node_source(call_node.func)
+        orig_func_name = _node_source(call_node.func)
         unique_func_name = __unique_py_function_name__.__name__ + "('{}', __context_id)".format(orig_func_name)
 
         args = []
@@ -96,9 +93,9 @@ class PycallToIPythonKernelTransformer(ast.NodeTransformer):
             args = []
             args.append(self._pycall_arg_to_str(node.args[0]))
             if len(node.args) > 1:
-                callbacks = [node_source(node.args[1])]
+                callbacks = [_node_source(node.args[1])]
                 if len(node.args) > 2:
-                    callbacks.append(node_source(node.args[2]))
+                    callbacks.append(_node_source(node.args[2]))
                 args.append(
                     "{'iopub':{'output': " + __callback_adapter__.__name__ + "(" + ",".join(callbacks) + ")}}"
                 )
@@ -110,22 +107,20 @@ class PycallToIPythonKernelTransformer(ast.NodeTransformer):
             return node
 
 
-def transform_py_code(f):
-    source_code = dedent(inspect.getsource(f))
-
+def _transform_py_code(source_code):
     tree = ast.parse(source_code)
     tree.body[0].decorator_list = []
-    tree = PycallToIPythonKernelTransformer().visit(tree)
+    tree = _PycallToIPythonKernelTransformer().visit(tree)
     ast.fix_missing_locations(tree)
-    return node_source(tree)
+    return _node_source(tree)
 
 
-def _compile_context_generator(js_functions, js_inits, minify):
+@lru_cache(25)
+def compile_context_generator(sources, minify):
     tempdir = tempfile.mkdtemp()
 
     try:
-        js_functions = JS_BUILTINS + js_functions
-        js_inits.insert(0, __common_init__)
+        sources = JS_BUILTINS + sources
 
         py_file = os.path.join(tempdir, "source.py")
         js_file = os.path.join(tempdir, "__target__", "source.js")
@@ -137,60 +132,28 @@ def _compile_context_generator(js_functions, js_inits, minify):
             js_out_file = js_merged_file
 
         with open(py_file, 'w') as f:
-            for func in js_functions:
-                f.write(transform_py_code(func))
+            for source in sources:
+                f.write(_transform_py_code(source.source_code()))
                 f.write("\n\n")
 
         subprocess.check_call(["transcrypt", "--nomin", py_file])
         subprocess.check_call(
-            [relative_path("./node_modules/rollup/bin/rollup"), js_file, "--format", "cjs", "--file", js_merged_file]
+            [_relative_path("./node_modules/rollup/bin/rollup"), js_file, "--format", "cjs", "--file", js_merged_file]
         )
         if minify:
             subprocess.check_call(
-                [relative_path("./node_modules/uglify-es/bin/uglifyjs"), js_merged_file, "-o", js_minified_file]
+                [_relative_path("./node_modules/uglify-es/bin/uglifyjs"), js_merged_file, "-o", js_minified_file]
             )
 
         with open(js_out_file, 'r') as f:
             script = f.read()
 
-        inits_calls = "\n" + "".join(f.__name__ + "();\n" for f in js_inits)
         script = "\n".join(["function(__context_id, __data, __py_functions_names){"
-                            "let __scope = {};",
                             "let exports = {};",
                             script,
-                            "let __exports = exports;",
-                            "exports = undefined;",
-                            inits_calls,
-                            "return __exports;",
+                            "return exports;",
                             "}"])
 
         return script
     finally:
         shutil.rmtree(tempdir)
-
-
-class ComparableFunction:
-
-    def __init__(self, func):
-        self.func = func
-        self.source_code = dedent(inspect.getsource(func))
-
-    def __eq__(self, other):
-        return self.source_code == other.source_code
-
-    def __hash__(self):
-        return hash(self.source_code)
-
-
-@lru_cache(20)
-def _compile_context_generator_cached(comparable_js_functions, comparable_js_inits, minify):
-    js_functions = [wrapper.func for wrapper in comparable_js_functions]
-    js_inits = [wrapper.func for wrapper in comparable_js_inits]
-    return _compile_context_generator(js_functions, js_inits, minify)
-
-
-def compile_context_generator(js_functions, js_inits, minify):
-    comparable_js_functions = tuple(map(ComparableFunction, js_functions))
-    comparable_js_inits = tuple(map(ComparableFunction, js_inits))
-    script = _compile_context_generator_cached(comparable_js_functions, comparable_js_inits, minify)
-    return script

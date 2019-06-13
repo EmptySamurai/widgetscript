@@ -1,4 +1,5 @@
 from .shared import __unique_py_function_name__, __unique_context_variable_name__, __unique_handle_name__
+from .source import JsFunction, JsFlat
 
 
 def __callback_adapter__(callback, error_callback):
@@ -69,14 +70,24 @@ def __common_init__():
     observer.observe(cell.parentElement, {"childList": True, "subtree": True})
 
 
-JS_BUILTINS = [__callback_adapter__,
-               __convert_py_argument__,
-               __convert_py_starred_argument__,
-               __convert_py_keyword_argument__,
-               __convert_py_starred_keyword_argument__,
-               __unique_py_function_name__,
-               __unique_context_variable_name__,
-               __cleanup__,
-               __common_init__,
-               __unique_handle_name__
-               ]
+JS_BUILTINS = tuple(
+    [
+        JsFunction(f) for f in
+        [
+            __callback_adapter__,
+            __convert_py_argument__,
+            __convert_py_starred_argument__,
+            __convert_py_keyword_argument__,
+            __convert_py_starred_keyword_argument__,
+            __unique_py_function_name__,
+            __unique_context_variable_name__,
+            __cleanup__,
+            __unique_handle_name__
+        ]
+    ] + [
+        JsFlat(f) for f in
+        [
+            __common_init__
+        ]
+    ]
+)

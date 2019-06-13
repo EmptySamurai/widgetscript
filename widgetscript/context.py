@@ -8,6 +8,7 @@ from IPython.display import display, Javascript
 from .injectors import AnonymousJsContextInjector, PrecompiledJsContextInjector
 from .compiler import compile_context_generator
 from .shared import __unique_py_function_name__, __unique_context_variable_name__, __unique_handle_name__
+from .source import JsFunction, JsFlat, JsRaw
 
 
 def _decode_param(param):
@@ -18,7 +19,12 @@ def _random_id():
     return str(uuid.uuid4()).replace("-", "_")
 
 
-class PrecompiledWidgetContext:
+class PrecompiledJsContext:
+    """
+    Contains compiled code of some `JsContext`.
+    Using precompiled context is more efficient, than compiling it every time.
+    Not only because it eliminates compilation stage, but shares same JavaScript code between contexts.
+    """
 
     def __init__(self, context_generator_script):
         self.context_generator_script = context_generator_script
@@ -56,18 +62,20 @@ class PrecompiledWidgetContext:
             display(Javascript("window.{} = undefined;".format(self.context_generator_var_name)))
 
 
-class WidgetContext:
+class JsContext:
+    """
+    `JsContext` creates JavaScript context and provides Python <-> JavaScript interaction
+    """
 
     def __init__(self, data=None, precompiled_context=None):
         """
-        Creates `WidgetContext`
+        Creates `JsContext`
         :param data: data to pass to context in JavaScript. Would be available as __data variable.
          By default it would be null
-        :param precompiled_context: precompiled context obtained from same widget context
+        :param precompiled_context: precompiled context obtained from same `JsContext`
         """
-        self._js_functions = []
+        self._sources = []
         self._py_functions = []
-        self._js_inits = []
         self.context_id = _random_id()
         self.data = data
         self.precompiled_context = precompiled_context
@@ -102,34 +110,55 @@ class WidgetContext:
 
         return f
 
+    def js_by_name(self, name):
+        """
+        Creates wrapper for JavaScript function by its name inside `exports` variable
+        Usually used together with `js_raw` function
+        :param name: name of the function
+        :return: function that calls JavaScript function with name equals to `name`
+        """
+
+        def func(*args):
+            args = map(json.dumps, args)
+            args = ",".join(args)
+
+            script = __unique_context_variable_name__(self.context_id) + "." + name + "({})".format(args) + ";"
+            self._execute_js(script)
+
+        return func
+
     def js(self, f):
         """
-        Decorator for js functions.
+        Decorator for JavaScript functions.
         All js functions will be translated to JavaScript, and are accessible for each other inside one context
         Calling resulting function in python will execute correspondent function in JavaScript
         Doesn't return JavaScript function result back to Python (you can implement it yourself using `pycall`)
         """
-        def wrapper(*args):
-            args = map(json.dumps, args)
-            args = ",".join(args)
+        self._sources.append(JsFunction(f))
+        return self.js_by_name(f.__name__)
 
-            script = __unique_context_variable_name__(self.context_id) + "." + f.__name__ + "({})".format(args) + ";"
-            self._execute_js(script)
+    def js_flat(self, f):
+        """
+        Decorator for JavaScript code
+        Body of target which bodies will be injected into context
+        """
+        self._sources.append(JsFlat(f))
 
-        self._js_functions.append(f)
+        def wrapper():
+            raise RuntimeError("Flat JS functions can't be called")
+
         return wrapper
 
-    def js_init(self, f):
+    def js_raw(self, code):
         """
-        Decorator, same as `js` decorator, but also make function invoke after creation of context
+        Inserts raw JavaScript code into context
+        Note that `pycall` is not available in raw code
+        :param code: code to insert into context
         """
-        if len(inspect.signature(f).parameters) > 0:
-            raise ValueError("js_init function shouldn't have arguments")
-        self._js_inits.append(f)
-        return self.js(f)
+        self._sources.append(JsRaw(code))
 
     def _get_context_generator_script(self, minify):
-        return compile_context_generator(self._js_functions, self._js_inits, minify)
+        return compile_context_generator(tuple(self._sources), minify)
 
     def compile(self, minify=True):
         """
@@ -137,7 +166,7 @@ class WidgetContext:
         :param minify: if to minify code (for debug purposes)
         :return: precompiled context
         """
-        return PrecompiledWidgetContext(self._get_context_generator_script(minify=minify))
+        return PrecompiledJsContext(self._get_context_generator_script(minify=minify))
 
     def html(self):
         """
