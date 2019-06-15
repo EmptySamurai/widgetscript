@@ -73,5 +73,5 @@ class JsRaw(Source):
                 "\\": "\\\\",
                 "'": "\\'"
             }))
-            self._source_code = "__pragma__('js', '{}', '" + escaped_js_source + "')"
+            self._source_code = "__pragma__('js', '{}', '''" + escaped_js_source + "''')"
         return self._source_code
