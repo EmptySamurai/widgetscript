@@ -1,6 +1,5 @@
 import json
-import base64
-import json
+from urllib.parse import unquote
 import uuid
 import inspect
 from IPython.display import display, Javascript
@@ -12,7 +11,7 @@ from .source import JsFunction, JsFlat, JsRaw
 
 
 def _decode_param(param):
-    return json.loads(base64.b64decode(param).decode())
+    return json.loads(unquote(param))
 
 
 def _random_id():
@@ -28,8 +27,8 @@ class PrecompiledJsContext:
 
     def __init__(self, context_generator_script):
         self.context_generator_script = context_generator_script
-        self.precompiled_context_id = _random_id()
-        self.context_generator_var_name = "__js_precompiled_context_generator_{}".format(self.precompiled_context_id)
+        self.id = _random_id()
+        self.context_generator_var_name = "__js_precompiled_context_generator_{}".format(self.id)
         self.injected = False
 
     def save(self, path):
@@ -42,7 +41,7 @@ class PrecompiledJsContext:
 
     def inject(self):
         if self.injected:
-            raise ValueError("Precompiled context {} was already injected".format(self.precompiled_context_id))
+            raise ValueError("Precompiled context {} was already injected".format(self.id))
         display(Javascript("window.{} = {};".format(self.context_generator_var_name, self.context_generator_script)))
         self.injected = True
 
@@ -76,12 +75,12 @@ class JsContext:
         """
         self._sources = []
         self._py_functions = []
-        self.context_id = _random_id()
+        self.id = _random_id()
         self.data = data
         self.precompiled_context = precompiled_context
 
         self._executed_js_at_least_once = False
-        self._js_display_id = self.context_id + "_js"
+        self._js_display_id = self.id + "_js"
 
         self._main_frame = None
         for frame in inspect.stack():
@@ -104,7 +103,7 @@ class JsContext:
             kwargs = {key: _decode_param(value) for key, value in kwargs.items()}
             return json.dumps(f(*args, **kwargs))
 
-        unique_f_name = __unique_py_function_name__(f.__name__, self.context_id)
+        unique_f_name = __unique_py_function_name__(f.__name__, self.id)
         self._main_frame.f_globals[unique_f_name] = wrapper
         self._py_functions.append(unique_f_name)
 
@@ -122,7 +121,7 @@ class JsContext:
             args = map(json.dumps, args)
             args = ",".join(args)
 
-            script = __unique_context_variable_name__(self.context_id) + "." + name + "({})".format(args) + ";"
+            script = __unique_context_variable_name__(self.id) + "." + name + "({})".format(args) + ";"
             self._execute_js(script)
 
         return func
@@ -181,14 +180,15 @@ class JsContext:
                 self.precompiled_context.inject()
             injector = PrecompiledJsContextInjector(self.precompiled_context)
 
+        context_param = {"id": self.id, "data": self.data}
         return "\n".join((
-            '<div id="{}" style="display: none;"></div>'.format(__unique_handle_name__(self.context_id)),
-            '<script>{}</script>'.format(injector.get_inject_script(self.context_id, self.data, self._py_functions)),
+            '<div id="{}" style="display: none;"></div>'.format(__unique_handle_name__(self.id)),
+            '<script>{}</script>'.format(injector.get_inject_script(context_param, self._py_functions)),
         ))
 
     def _repr_html_(self):
         return self.html()
 
     def _execute_js(self, code):
-        display(Javascript(code), update=self._executed_js_at_least_once, display_id=self.context_id + "_js")
+        display(Javascript(code), update=self._executed_js_at_least_once, display_id=self.id + "_js")
         self._executed_js_at_least_once = True

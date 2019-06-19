@@ -20,7 +20,7 @@ def __callback_adapter__(callback, error_callback):
 
 
 def __convert_py_argument__(arg):
-    return "'" + btoa(JSON.stringify(arg, lambda k, v: None if v == None else v)) + "'"
+    return '"' + encodeURIComponent(JSON.stringify(arg, lambda k, v: None if v == None else v)) + '"'
 
 
 def __convert_py_starred_argument__(args):
@@ -50,12 +50,12 @@ def __cleanup__():
     for py_func in __py_functions_names:
         IPython.notebook.kernel.execute("del {}".format(py_func))
 
-    window[__unique_context_variable_name__(__context_id)] = js_undefined
+    window[__unique_context_variable_name__(context.id)] = js_undefined
     console.log("Cleaned")
 
 
 def __common_init__():
-    handle = document.getElementById(__unique_handle_name__(__context_id))
+    handle = document.getElementById(__unique_handle_name__(context.id))
     cell = handle.closest(".cell")
 
     def callback(record, observer):

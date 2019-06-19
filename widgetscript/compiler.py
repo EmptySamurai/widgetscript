@@ -55,7 +55,7 @@ class _PycallToIPythonKernelTransformer(ast.NodeTransformer):
             return __convert_py_starred_keyword_argument__.__name__ + "({})".format(_node_source(keyword.value))
 
         orig_func_name = _node_source(call_node.func)
-        unique_func_name = __unique_py_function_name__.__name__ + "('{}', __context_id)".format(orig_func_name)
+        unique_func_name = __unique_py_function_name__.__name__ + "('{}', context.id)".format(orig_func_name)
 
         args = []
         for arg in call_node.args:
@@ -148,8 +148,9 @@ def compile_context_generator(sources, minify):
         with open(js_out_file, 'r') as f:
             script = f.read()
 
-        script = "\n".join(["function(__context_id, __data, __py_functions_names){"
-                            "let exports = {};",
+        script = "\n".join(["function(__context, __py_functions_names){",
+                            "const context = Object.freeze(__context);",
+                            "const exports = {};",
                             script,
                             "return exports;",
                             "}"])
